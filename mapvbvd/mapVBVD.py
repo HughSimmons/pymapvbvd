@@ -288,7 +288,7 @@ def evalMDH(mdh_blob, version):
         np.minimum(evalInfoMask1 & 2 ** 24, 1),
         np.minimum(evalInfoMask1 & 2 ** 25, 1),
         np.minimum(
-            mdh.aulEvalInfoMask[:, 1] & 2 ** (53 - 32),
+            mdh.aulEvalInfoMask[:, 1] & 2 ** (56 - 32),
             1),  # WTC modified this as the original matlab code didn't make sense
         np.ones(Nmeas, dtype=np.uint32))
 
