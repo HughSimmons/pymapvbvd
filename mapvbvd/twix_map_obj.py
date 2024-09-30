@@ -935,6 +935,86 @@ class twix_map_obj:
 
         return out if not self.squeeze else np.squeeze(out)
 
+
+    def read_vop(self):
+        """
+        Method to read VOP data, handle RF pulses from multiple ADC events,
+        and different lengths.
+        """
+        vop_length_list = []
+        out = []  # one index for each type of pulse
+        inx = []  # for each list item, what is its RF pulse counter
+        cnt = []
+        mem = self.memPos
+        szScanHeader = self.freadInfo['szScanHeader']
+
+        # Open the file
+        with open(self.filename, 'rb') as fid:
+            # Variables initialization
+            pulse_len = 0
+            this_pulse = np.array([])  # Empty array for pulses
+            pulse_counter = 0
+            nList = 0
+
+            # Do this twice (1) to calculate memory requirements (2) to read in the data
+            for i_memprep in range(1, 3):
+                if i_memprep == 2:
+                    for list_ind in range(nList):
+                        out.append(np.zeros((vop_length_list[list_ind], self.NCha, cnt[list_ind]), dtype=np.float32))
+                        inx.append(np.zeros((cnt[list_ind],), dtype=np.float32))
+                    cnt = [0] * len(cnt)  # Reset counter
+
+                for k in range(len(mem)):
+                    if i_memprep == 2:
+                        nByte = self.NCha * (self.freadInfo['szChannelHeader'] + 8 * self.nCol[k])
+                        readSize = (2, nByte // 8)
+                        readShape = (self.nCol[k] + self.freadInfo['szChannelHeader'] // 8, self.NCha)
+                        readCut = slice(self.freadInfo['szChannelHeader'] // 8, self.nCol[k] + self.freadInfo['szChannelHeader'] // 8)
+
+                        # Skip scan header
+                        fid.seek(mem[k] + szScanHeader)
+                        raw = np.fromfile(fid, dtype=np.float32, count=np.prod(readSize)).reshape(readSize).T
+                        raw = np.reshape(raw[:, 0] + 1j * raw[:, 1], readShape)
+                        raw = raw[readCut, :]
+
+                        # Append pulse data
+                        this_pulse = np.vstack([this_pulse, raw]) if this_pulse.size else raw
+
+                    pulse_len += self.nCol[k]
+
+                    if (k == len(mem) - 1) or (self.Ide[k] >= self.Ide[k + 1]):  # All blocks read in
+                        vop_length_list, list_ind = self.update_list(vop_length_list, pulse_len)
+
+                        if list_ind >= nList:
+                            nList = list_ind + 1
+                            cnt.append(0)
+
+                        cnt[list_ind] += 1
+
+                        if i_memprep == 2:
+                            out[list_ind][:, :, cnt[list_ind] - 1] = this_pulse
+                            inx[list_ind][cnt[list_ind] - 1] = k  # Which memory element
+
+                        pulse_len = 0
+                        this_pulse = np.array([])
+
+        return (out, inx) if len(inx) > 0 else (out,)
+
+    def update_list(self, vop_length_list, pulse_len):
+        """
+        Check if pulse_len is part of vop_length_list. If not, add it and return the index.
+        """
+        # Check if the current pulse length is already in the list
+        if pulse_len not in vop_length_list:
+            # Add the new pulse length to the list
+            vop_length_list.append(pulse_len)
+        # Return the index where this pulse length is found/added
+        list_ind = vop_length_list.index(pulse_len)
+        return vop_length_list, list_ind
+
+
+
+
     """
       ATH added August 2021
          alter a loop counter, for example if its missing in the mdh, add it in here, or alter it
