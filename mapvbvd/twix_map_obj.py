@@ -935,7 +935,7 @@ class twix_map_obj:
 
         return out if not self.squeeze else np.squeeze(out)
 
-
+    #HCS first attempt to fix bug
     def read_vop(self):
         """
         Method to read VOP data, handle RF pulses from multiple ADC events,
@@ -946,6 +946,7 @@ class twix_map_obj:
         inx = []  # for each list item, what is its RF pulse counter
         cnt = []
         mem = self.memPos
+        print(type(self.freadInfo))  #debug
         szScanHeader = self.freadInfo['szScanHeader']
 
         # Open the file
