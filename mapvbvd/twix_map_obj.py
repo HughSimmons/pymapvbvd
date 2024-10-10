@@ -216,6 +216,7 @@ class twix_map_obj:
         if rstraj is None:
             self.regrid = False
 
+        self.nCol = None ##Added by HCS to match ATH matlab code
         self.NCol = None
         self.NCha = None
         self.Lin = None
@@ -422,6 +423,11 @@ class twix_map_obj:
         # ok, let us assume for now that all NCol and NCha entries are
         # the same for all mdhs:
 
+        #Added by HCS to match ATH matlab
+        if self.dataType == 'vop':
+            self.nCol = self.NCol
+
+
         # WTC not sure if this is a good idea - will keep the same as original for now
         if self.NCol.ndim > 0:
             self.NCol = self.NCol[0]
@@ -465,7 +471,7 @@ class twix_map_obj:
             dtype=int)
 
         nByte = self.NCha * (self.freadInfo.szChannelHeader + 8 * self.NCol)
-
+                
         # size for fread
         self.freadInfo.sz = np.array([2, nByte / 8])
         # reshape size
@@ -935,7 +941,7 @@ class twix_map_obj:
 
         return out if not self.squeeze else np.squeeze(out)
 
-    #HCS first attempt to fix bug
+    #HCS adapted from ATH matlab code VE branch mattwixtools readVOP.m
     def read_vop(self):
         """
         Method to read VOP data, handle RF pulses from multiple ADC events,
@@ -946,37 +952,46 @@ class twix_map_obj:
         inx = []  # for each list item, what is its RF pulse counter
         cnt = []
         mem = self.memPos
-        print(type(self.freadInfo))  #debug
-        szScanHeader = self.freadInfo['szScanHeader']
+        
+        szScanHeader = self.freadInfo.szScanHeader
 
         # Open the file
         with open(self.filename, 'rb') as fid:
             # Variables initialization
             pulse_len = 0
             this_pulse = np.array([])  # Empty array for pulses
-            pulse_counter = 0
+            #pulse_counter = 0
             nList = 0
 
             # Do this twice (1) to calculate memory requirements (2) to read in the data
             for i_memprep in range(1, 3):
                 if i_memprep == 2:
                     for list_ind in range(nList):
-                        out.append(np.zeros((vop_length_list[list_ind], self.NCha, cnt[list_ind]), dtype=np.float32))
-                        inx.append(np.zeros((cnt[list_ind],), dtype=np.float32))
+                                               
+                        vop_length = int(vop_length_list[list_ind])  # Ensure integer
+                        ncha = int(self.NCha)                        # Ensure integer
+                        cnt_value = int(cnt[list_ind])               # Ensure integer
+
+                        out.append(np.zeros((vop_length, ncha, cnt_value), dtype=complex))
+                        inx.append(np.zeros((cnt_value,), dtype=np.float32))
                     cnt = [0] * len(cnt)  # Reset counter
 
                 for k in range(len(mem)):
                     if i_memprep == 2:
-                        nByte = self.NCha * (self.freadInfo['szChannelHeader'] + 8 * self.nCol[k])
+                        nByte = int(self.NCha * (self.freadInfo.szChannelHeader + 8 * self.nCol[k])) #HCS made int
                         readSize = (2, nByte // 8)
-                        readShape = (self.nCol[k] + self.freadInfo['szChannelHeader'] // 8, self.NCha)
-                        readCut = slice(self.freadInfo['szChannelHeader'] // 8, self.nCol[k] + self.freadInfo['szChannelHeader'] // 8)
-
-                        # Skip scan header
-                        fid.seek(mem[k] + szScanHeader)
-                        raw = np.fromfile(fid, dtype=np.float32, count=np.prod(readSize)).reshape(readSize).T
-                        raw = np.reshape(raw[:, 0] + 1j * raw[:, 1], readShape)
+                        readShape = (int(self.nCol[k] + self.freadInfo.szChannelHeader // 8), int(self.NCha))
+                        
+                        readCut = slice(self.freadInfo.szChannelHeader // 8, int(self.nCol[k]) + self.freadInfo.szChannelHeader // 8) ##HCS made int
+                        
+                        fid.seek(int(mem[k]) + szScanHeader)   #changed to int HCS
+                        
+                        raw = np.fromfile(fid, dtype=np.float32, count=int(np.prod(readSize))).reshape(readSize, order="F").T 
+                        
+                        raw = np.reshape(raw[:, 0] + 1j * raw[:, 1], readShape, order='F') ##changed order
                         raw = raw[readCut, :]
+
+                        #print(raw.shape)
 
                         # Append pulse data
                         this_pulse = np.vstack([this_pulse, raw]) if this_pulse.size else raw
@@ -1001,6 +1016,7 @@ class twix_map_obj:
 
         return (out, inx) if len(inx) > 0 else (out,)
 
+    ####Required for read_vop()
     def update_list(self, vop_length_list, pulse_len):
         """
         Check if pulse_len is part of vop_length_list. If not, add it and return the index.
